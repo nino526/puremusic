@@ -12,6 +12,8 @@ import android.view.WindowManager
 import android.view.WindowInsetsController
 import android.provider.Settings
 import android.provider.MediaStore
+import android.app.StatusBarManager
+import android.graphics.drawable.Icon
 import android.app.Activity
 import android.app.RecoverableSecurityException
 import androidx.activity.ComponentActivity
@@ -54,11 +56,14 @@ class MainActivity : ComponentActivity() {
         // Erase the obsolete optional AudD credential on upgrade; recognition now opens Google.
         getSharedPreferences("pure_music", MODE_PRIVATE).edit().remove("audd_key").apply()
         PlaybackController.loadOrder(this)
+        stopService(Intent(this, FloatingBubbleService::class.java))
         setContent { PureApp() }
+        if (intent.getBooleanExtra("autoIdentify", false)) window.decorView.post { FreeSongSearch.launch(this) }
     }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent)
         requestedScreen = intent.getStringExtra("screen") ?: if (intent.action == Intent.ACTION_SEND) "identify" else "songs"
+        if (intent.getBooleanExtra("autoIdentify", false)) window.decorView.post { FreeSongSearch.launch(this) }
     }
     private fun play(track: Track, queue: List<Track>) {
         PlaybackController.queue = queue
@@ -152,7 +157,7 @@ class MainActivity : ComponentActivity() {
         var link by remember { mutableStateOf(if (intent.action == Intent.ACTION_SEND) intent.getStringExtra(Intent.EXTRA_TEXT) ?: "" else "") }
         var audioUrl by remember { mutableStateOf("") }
         var downloadStatus by remember { mutableStateOf("") }
-        var overlayEnabled by remember { mutableStateOf(false) }
+        
         val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { songs = loadSongs(this) }
         LaunchedEffect(Unit) {
             val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
@@ -185,8 +190,8 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = colors) {
             Column(Modifier.fillMaxSize().background(appBg).windowInsetsPadding(WindowInsets.safeDrawing)) {
                 if (screen != "visualizer") Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 27.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("PURE ", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text("Music", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = appAccent)
+                    Text("Nino", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text(".music", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = appAccent)
                     Spacer(Modifier.weight(1f))
                     IconButton(onClick = { screen = "identify" }) { Icon(Icons.Default.Mic, "Identify", tint = appAccent) }
                     IconButton(onClick = { screen = "settings" }) { Icon(Icons.Default.Settings, "Settings") }
@@ -273,8 +278,8 @@ class MainActivity : ComponentActivity() {
                                 try {
                                     val url = URL(audioUrl.trim()); require(url.protocol == "https")
                                     require(url.path.lowercase().endsWith(".mp3") || url.path.lowercase().endsWith(".m4a") || url.path.lowercase().endsWith(".ogg"))
-                                    val filename = "PURE_${System.currentTimeMillis()}.${url.path.substringAfterLast('.').lowercase()}"
-                                    val request = DownloadManager.Request(Uri.parse(audioUrl.trim())).setTitle(filename).setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC, "PURE Music/$filename")
+                                    val filename = "Nino_${System.currentTimeMillis()}.${url.path.substringAfterLast('.').lowercase()}"
+                                    val request = DownloadManager.Request(Uri.parse(audioUrl.trim())).setTitle(filename).setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC, "Nino.music/$filename")
                                     (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
                                     downloadStatus = "Download queued. Refresh your library when finished."
                                 } catch (_: Exception) { downloadStatus = "Enter a supported, authorized HTTPS audio file URL." }
@@ -301,16 +306,19 @@ class MainActivity : ComponentActivity() {
                             Text("Visualizer", fontWeight = FontWeight.Bold)
                             Text("Five effects. Select and save the effect inside Now Playing or in full-screen mode.", fontSize = 12.sp, color = appMuted)
                             Spacer(Modifier.height(20.dp))
-                            Text("Floating Recognition", fontWeight = FontWeight.Bold)
-                            Text("Movable shortcut over other apps. Tap it to start identification in PURE Music.", fontSize = 12.sp, color = appMuted)
-                            SwitchRow("Floating Button", overlayEnabled) { on ->
-                                overlayEnabled = on
-                                if (on) {
-                                    if (!Settings.canDrawOverlays(this@MainActivity)) startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-                                    else ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, FloatingBubbleService::class.java))
-                                } else stopService(Intent(this@MainActivity, FloatingBubbleService::class.java))
+                            Text("Quick Settings", fontWeight = FontWeight.Bold)
+                            Text("Identify a song from Android Quick Settings. Swipe down twice, tap Edit, and add the Nino.music Identify song tile.", fontSize = 12.sp, color = appMuted)
+                            if (Build.VERSION.SDK_INT >= 33) {
+                                Spacer(Modifier.height(10.dp))
+                                Button(onClick = {
+                                    getSystemService(StatusBarManager::class.java)?.requestAddTileService(
+                                        ComponentName(this@MainActivity, IdentifyTileService::class.java),
+                                        "Identify song",
+                                        Icon.createWithResource(this@MainActivity, R.drawable.nino_tile_icon),
+                                        ContextCompat.getMainExecutor(this@MainActivity)
+                                    ) { }
+                                }) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Add Identify tile") }
                             }
-                            Button(onClick = { if (Settings.canDrawOverlays(this@MainActivity)) { overlayEnabled = true; ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, FloatingBubbleService::class.java)) } else startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }) { Text("Enable Floating Button") }
                             Spacer(Modifier.height(22.dp))
                             Text("Music Recognition", fontWeight = FontWeight.Bold)
                             Text("Search for a song with Google in Identify. Results appear in the Google app.", fontSize = 12.sp, color = appMuted)
@@ -378,7 +386,7 @@ class MainActivity : ComponentActivity() {
             }
             deleteCandidate?.let { track -> AlertDialog(onDismissRequest = { deleteCandidate = null },
                 title = { Text("Delete song from phone?") },
-                text = { Text("${track.title} will be removed from device storage, not only from PURE Music. Android may ask for confirmation. This cannot be undone.") },
+                text = { Text("${track.title} will be removed from device storage, not only from Nino.music. Android may ask for confirmation. This cannot be undone.") },
                 confirmButton = { TextButton(onClick = { deleteCandidate = null; deleteTrack(track) }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
                 dismissButton = { TextButton(onClick = { deleteCandidate = null }) { Text("Cancel") } }) }
             deleteError?.let { message -> AlertDialog(onDismissRequest = { deleteError = null }, title = { Text("Deletion failed") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { deleteError = null }) { Text("OK") } }) }
