@@ -39,7 +39,8 @@ import kotlin.math.*
 // Original procedural visual effects inspired by classic media-player categories.
 // No external visualizer assets, network calls or paid libraries are used.
 private enum class VisualMode(val title: String) {
-    PLASMA("Plasma"), ALCHEMY("Alchemy"), PARTICLES("Particles"), SPECTRUM("Spectrum"), WAVES("Waves")
+    PLASMA("Plasma"), ALCHEMY("Alchemy"), PARTICLES("Particles"), SPECTRUM("Spectrum"), WAVES("Waves"),
+    CIRCLE("Circle"), AURA("Aura"), GALAXY("Galaxy"), NEBULA("Nebula Pulse")
 }
 
 private data class AudioFrame(val spectrum: List<Float>, val wave: List<Float>, val bass: Float, val beat: Float) {
@@ -213,6 +214,91 @@ fun VisualizerScreen(onBack: () -> Unit, embedded: Boolean = false) {
                             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                         }
                         drawPath(path, color.copy(alpha = .18f + layer * .075f), style = Stroke(width = 1.5f + bass * 3f))
+                    }
+                }
+
+                VisualMode.CIRCLE -> {
+                    // Oscillating magenta-and-cyan audio ring, with bright beat particles.
+                    for (layer in 0 until 5) {
+                        val path = Path()
+                        for (i in 0..180) {
+                            val a = i * (2f * PI.toFloat() / 180f)
+                            val energy = frame.spectrum[(i * 64 / 180) % 64]
+                            val radius = min(w, h) * (.25f + layer * .012f) * pulse +
+                                sin(a * (5f + layer) + t * (1.2f + layer * .1f)) * (13f + energy * 60f * intensity)
+                            val p = Offset(center.x + cos(a) * radius, center.y + sin(a) * radius)
+                            if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+                            if (layer == 0 && i % 6 == 0)
+                                drawCircle(Color(0xFF6FE8FF).copy(alpha = .22f + energy * .7f),
+                                    radius = 1.6f + energy * 3.3f, center = p)
+                        }
+                        drawPath(path, (if (layer % 2 == 0) Color(0xFF64DAFF) else Color(0xFFE86BFF))
+                            .copy(alpha = .43f - layer * .055f), style = Stroke(width = 2.1f + bass * 3f))
+                    }
+                }
+                VisualMode.AURA -> {
+                    // Wide translucent wave ribbons, gently moving even between beats.
+                    for (layer in 0 until 11) {
+                        val path = Path()
+                        for (i in 0..150) {
+                            val u = i / 150f
+                            val energy = frame.spectrum[(i * 64 / 150) % 64]
+                            val x = u * w
+                            val y = h * (.29f + layer * .045f) +
+                                sin(u * 11f + t * (.7f + layer * .05f) + layer * .44f) *
+                                (h * .083f + energy * h * .09f) * intensity +
+                                cos(u * 21f - t * .27f + layer) * h * .022f
+                            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                        }
+                        drawPath(path, (if (layer % 3 == 0) Color(0xFF5BE8FF) else Color(0xFFB25CFF))
+                            .copy(alpha = .12f + layer * .04f), style = Stroke(width = 2f + bass * 2.5f))
+                    }
+                }
+                VisualMode.GALAXY -> {
+                    // Five intertwined spirals of stars orbiting the track's bass.
+                    drawCircle(Color(0xFFAF55FF).copy(alpha = .1f + bass * .12f),
+                        radius = min(w, h) * .13f * pulse, center = center)
+                    for (i in 0 until 640) {
+                        val arm = i % 5
+                        val travel = ((i / 5) % 128) / 128f
+                        val a = arm * (2f * PI.toFloat() / 5f) + travel * 10f + t * .22f
+                        val wobble = sin(i * .5f + t * .7f) * (.01f + travel * .08f)
+                        val r = min(w, h) * (.028f + travel * .45f) * (1f + bass * .3f)
+                        val p = Offset(center.x + cos(a + wobble) * r, center.y + sin(a + wobble) * r * .73f)
+                        val energy = frame.spectrum[i % 64]
+                        drawCircle((if (arm % 2 == 0) Color(0xFFE66CFF) else Color(0xFF60C8FF))
+                            .copy(alpha = (.18f + energy * .7f).coerceAtMost(.95f)),
+                            radius = 1f + energy * 2.8f + (1f - travel), center = p)
+                    }
+                }
+                VisualMode.NEBULA -> {
+                    // Plasma cloud and rotating filaments around a glowing core.
+                    val core = min(w, h) * (.21f + bass * .09f)
+                    drawCircle(Color(0xFFB349FF).copy(alpha = .13f + bass * .09f),
+                        radius = core * 1.45f, center = center)
+                    drawCircle(Color(0xFF5EDFFF).copy(alpha = .10f + bass * .11f),
+                        radius = core * .96f, center = center)
+                    for (layer in 0 until 13) {
+                        val path = Path()
+                        for (i in 0..170) {
+                            val a = i * (2f * PI.toFloat() / 170f)
+                            val energy = frame.spectrum[(i * 64 / 170 + layer * 7) % 64]
+                            val rr = core * (.71f + layer * .03f) +
+                                sin(a * (3 + layer % 5) + t * (.8f + layer * .08f)) *
+                                (11f + energy * 55f * intensity)
+                            val p = Offset(center.x + cos(a) * rr, center.y + sin(a) * rr)
+                            if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+                        }
+                        drawPath(path, (if (layer % 2 == 0) Color(0xFF64DCFF) else Color(0xFFE569FF))
+                            .copy(alpha = .11f + layer * .035f), style = Stroke(width = 2.2f + bass * 2f))
+                    }
+                    for (i in 0 until 190) {
+                        val a = i * 2.399963f + t * (.24f + i % 4 * .035f)
+                        val r = core * (.5f + (i % 73) / 87f)
+                        val energy = frame.spectrum[i % 64]
+                        drawCircle(Color(0xFFD295FF).copy(alpha = .22f + energy * .55f),
+                            radius = 1f + energy * 3.6f,
+                            center = Offset(center.x + cos(a) * r, center.y + sin(a) * r))
                     }
                 }
                 VisualMode.SPECTRUM -> {
