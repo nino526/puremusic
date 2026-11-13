@@ -34,6 +34,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
@@ -445,14 +446,31 @@ private fun FullPlayer(track: Track, playing: Boolean, position: Long, onBack: (
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.KeyboardArrowDown, "Back to library") }
             Spacer(Modifier.weight(1f))
+            Box(Modifier.width(24.dp).height(1.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .7f)))
+            Spacer(Modifier.width(9.dp))
             Text("NOW PLAYING", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(9.dp))
+            Box(Modifier.width(24.dp).height(1.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .7f)))
             Spacer(Modifier.weight(1f))
             Spacer(Modifier.width(48.dp))
         }
         Spacer(Modifier.height(8.dp))
-        Box(Modifier.fillMaxWidth().heightIn(max = 330.dp).aspectRatio(1f)
-            .background(Brush.linearGradient(listOf(Color(0xFF845BAD), Color(0xFF26395D))), RoundedCornerShape(24.dp)),
-            contentAlignment = Alignment.Center) {
+        val visualizerShape = RoundedCornerShape(24.dp)
+        Box(
+            Modifier.fillMaxWidth().heightIn(max = 330.dp).aspectRatio(1f)
+                // Clip the renderer so its particles and wave trails never bleed
+                // outside the visualizer panel, as happened in the old screenshots.
+                .clip(visualizerShape)
+                .background(Color(0xFF050614))
+                .border(
+                    width = 2.dp,
+                    brush = Brush.linearGradient(
+                        listOf(Color(0xFFEB70FF), Color(0xFF5A9EFF), Color(0xFFAC50F9), Color(0xFFEF85FF))
+                    ),
+                    shape = visualizerShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
             EmbeddedVisualizer(modifier = Modifier.fillMaxSize())
         }
         Spacer(Modifier.height(12.dp))
