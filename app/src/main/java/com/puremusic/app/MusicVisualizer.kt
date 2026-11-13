@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -22,6 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -533,17 +536,73 @@ fun EmbeddedVisualizer(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("pure_visualizer", 0) }
     var modeIndex by remember { mutableIntStateOf(prefs.getInt("mode", 1).coerceIn(0, VisualMode.entries.lastIndex)) }
-    Column(modifier.background(Color(0xFF05060E))) {
+    var moreOpen by remember { mutableStateOf(false) }
+    val smallShape = RoundedCornerShape(11.dp)
+    val labels = listOf("∿", "∞", "✦", "▥", "≋")
+    Column(modifier.background(Color(0xFF050610))) {
         Box(Modifier.weight(1f)) {
-            // Same audio-reactive rendering and selected mode as the full-screen visualizer.
+            // Sound-reactive native Canvas inside a clipped, neon-edged album panel.
             key(modeIndex) { VisualizerScreen(onBack = {}, embedded = true) }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            VisualMode.entries.forEachIndexed { index, effect ->
-                FilterChip(selected = modeIndex == index, onClick = {
-                    modeIndex = index
-                    prefs.edit().putInt("mode", index).apply()
-                }, label = { Text(effect.title, style = MaterialTheme.typography.labelSmall) })
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            VisualMode.entries.take(5).forEachIndexed { index, effect ->
+                val active = modeIndex == index
+                val bg = if (active)
+                    Brush.linearGradient(listOf(Color(0xFFAC48F3), Color(0xFF5B45DC)))
+                else Brush.linearGradient(listOf(Color(0xFF191327), Color(0xFF101122)))
+                Box(
+                    Modifier.weight(1f).height(46.dp).clip(smallShape)
+                        .background(bg)
+                        .border(1.dp,
+                            if (active) Color(0xFFEDB2FF) else Color(0xFF685181),
+                            smallShape)
+                        .clickable {
+                            modeIndex = index
+                            prefs.edit().putInt("mode", index).apply()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center) {
+                        Text(labels[index], fontSize = 13.sp,
+                            color = if (active) Color.White else Color(0xFFD0A8FF))
+                        Text(effect.title, fontSize = 9.sp,
+                            color = Color.White, fontWeight = if (active)
+                                FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1)
+                    }
+                }
+            }
+            Box(Modifier.width(34.dp)) {
+                val otherActive = modeIndex >= 5
+                Box(
+                    Modifier.fillMaxWidth().height(46.dp).clip(smallShape)
+                        .background(if (otherActive)
+                            Brush.linearGradient(listOf(Color(0xFFAB48F3), Color(0xFF5C47DE)))
+                            else Brush.linearGradient(listOf(Color(0xFF191327), Color(0xFF101122))))
+                        .border(1.dp, if (otherActive) Color(0xFFEDB2FF)
+                            else Color(0xFF685181), smallShape)
+                        .clickable { moreOpen = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("•••", color = Color.White, fontSize = 15.sp)
+                }
+                DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                    VisualMode.entries.drop(5).forEach { effect ->
+                        DropdownMenuItem(
+                            text = { Text(effect.title) },
+                            onClick = {
+                                modeIndex = effect.ordinal
+                                prefs.edit().putInt("mode", modeIndex).apply()
+                                moreOpen = false
+                            }
+                        )
+                    }
+                }
             }
         }
     }
