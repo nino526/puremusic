@@ -184,75 +184,152 @@ fun VisualizerScreen(onBack: () -> Unit, embedded: Boolean = false) {
                     }
                 }
                 VisualMode.ALCHEMY -> {
-                    // Bright central energy and interleaved cyan/magenta rotating filaments.
+                    // Volumetric neon torus: saturated blue-to-magenta spectral mesh,
+                    // soft layered blooms and a dark center like the approved design.
                     val rad = min(w, h)
-                    drawCircle(brush = androidx.compose.ui.graphics.Brush.radialGradient(
-                        listOf(Color(0xAAEF8DFF), Color(0x663F7EFF), Color(0x226D22B3), Color.Transparent),
-                        center = center, radius = rad * (.26f + bass * .08f)),
-                        center = center, radius = rad * (.26f + bass * .08f))
-                    for (ring in 0 until 10) {
+                    val neon = androidx.compose.ui.graphics.Brush.sweepGradient(
+                        listOf(
+                            Color(0xFFED68FF), Color(0xFFFC72ED),
+                            Color(0xFF7752FF), Color(0xFF38E3FF),
+                            Color(0xFF24AFFF), Color(0xFFCC53FF),
+                            Color(0xFFED68FF)
+                        ), center = center
+                    )
+                    drawCircle(
+                        brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                            listOf(
+                                Color(0x00271B66),
+                                Color(0x554B23A3),
+                                Color(0x444F2DCA),
+                                Color(0x225332A3),
+                                Color.Transparent
+                            ), center = center, radius = rad * .49f
+                        ), radius = rad * .49f, center = center
+                    )
+                    // Silk-like glowing background waves, never just an outline.
+                    for (layer in 0 until 8) {
                         val path = Path()
-                        for (i in 0..220) {
-                            val a = i * (2f * PI.toFloat() / 220f)
-                            val energy = frame.spectrum[(i * 64 / 220 + ring * 3) % 64]
-                            val wobble = sin(a * (3f + ring % 5) + t * (.75f + ring * .13f)) *
-                                (rad * (.021f + ring * .002f) + energy * 58f * intensity)
-                            val r = rad * (.13f + ring * .023f) * pulse + wobble
-                            val rotation = a + t * .08f * (if (ring % 2 == 0) 1f else -1f)
-                            val p = Offset(center.x + cos(rotation) * r, center.y + sin(rotation) * r)
-                            if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
-                            if (i % 9 == 0) {
-                                val spark = if (ring % 2 == 0) Color(0xFF64E8FF) else Color(0xFFFF83FC)
-                                drawCircle(spark.copy(alpha = .35f + energy * .55f),
-                                    radius = 1.5f + energy * 3.8f + ring * .12f, center = p)
-                            }
+                        for (i in 0..140) {
+                            val u = i / 140f
+                            val x = u * w
+                            val y = center.y + sin(u * 8.2f + t * .36f + layer * .32f) *
+                                (rad * (.16f + layer * .012f)) +
+                                cos(u * 17f - t * .23f + layer * .7f) * rad * .018f
+                            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                         }
-                        val hue = if (ring % 2 == 0) Color(0xFF4DDFFF) else Color(0xFFFF6BFA)
-                        drawPath(path, hue.copy(alpha = (.4f + ring * .045f).coerceAtMost(.8f)),
-                            style = Stroke(width = 1.6f + bass * 3f, cap = StrokeCap.Round))
+                        val shade = if (layer % 2 == 0) Color(0xFF4EDFFF) else Color(0xFFEC5EFF)
+                        drawPath(path, shade.copy(alpha = .055f + layer * .012f),
+                            style = Stroke(width = 2.4f + bass * 3f, cap = StrokeCap.Round))
+                    }
+                    // A set of closely spaced rings forms a translucent ribbon surface.
+                    // The whole shape rotates gently; audio energy modulates its outline.
+                    for (ring in 0 until 29) {
+                        val path = Path()
+                        val surface = ring / 28f
+                        val baseR = rad * (.215f + surface * .115f) * (1f + bass * .12f)
+                        for (i in 0..240) {
+                            val a = i * (2f * PI.toFloat() / 240f)
+                            val energy = frame.spectrum[(i * 64 / 240 + ring * 2) % 64]
+                            val petal = sin(a * 5f + t * .48f) * rad * (.048f + surface * .006f)
+                            val secondary = cos(a * 3f - t * .30f + ring * .09f) * rad * .019f
+                            val rr = baseR + petal + secondary + energy * 24f * intensity
+                            val angle = a + t * .045f + surface * .05f
+                            val p = Offset(center.x + cos(angle) * rr, center.y + sin(angle) * rr)
+                            if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+                        }
+                        path.close()
+                        if (ring % 7 == 0) {
+                            drawPath(path, brush = neon, alpha = .11f,
+                                style = Stroke(width = 16f + bass * 9f, cap = StrokeCap.Round))
+                            drawPath(path, brush = neon, alpha = .17f,
+                                style = Stroke(width = 7f + bass * 4f, cap = StrokeCap.Round))
+                        }
+                        drawPath(path, brush = neon,
+                            alpha = (.35f + .36f * (1f - abs(surface - .55f))).coerceIn(.3f, .78f),
+                            style = Stroke(width = if (ring % 4 == 0) 2.1f else .95f,
+                                cap = StrokeCap.Round))
+                    }
+                    // One prominent flowing outer edge with bloom and near-white highlights.
+                    val crest = Path()
+                    for (i in 0..280) {
+                        val a = i * (2f * PI.toFloat() / 280f)
+                        val energy = frame.spectrum[(i * 64 / 280) % 64]
+                        val radius = rad * .296f +
+                            sin(a * 5f + t * .48f) * rad * .055f +
+                            cos(a * 3f - t * .3f) * rad * .018f +
+                            energy * 25f * intensity
+                        val angle = a + t * .045f
+                        val pt = Offset(center.x + cos(angle) * radius, center.y + sin(angle) * radius)
+                        if (i == 0) crest.moveTo(pt.x, pt.y) else crest.lineTo(pt.x, pt.y)
+                    }
+                    crest.close()
+                    drawPath(crest, brush = neon, alpha = .16f,
+                        style = Stroke(width = 29f + bass * 8f, cap = StrokeCap.Round))
+                    drawPath(crest, brush = neon, alpha = .32f,
+                        style = Stroke(width = 11f + bass * 5f, cap = StrokeCap.Round))
+                    drawPath(crest, brush = neon, alpha = .98f,
+                        style = Stroke(width = 2.8f + bass * 1.8f, cap = StrokeCap.Round))
+                    // Bright spatial particles provide dimension around the ring.
+                    for (i in 0 until 250) {
+                        val a = i * 2.399963f + t * (.045f + i % 4 * .011f)
+                        val depth = ((i * 37) % 107) / 107f
+                        val radius = rad * (.22f + depth * .25f)
+                        val energy = frame.spectrum[i % 64]
+                        val point = Offset(center.x + cos(a) * radius,
+                            center.y + sin(a) * radius)
+                        val star = if (i % 2 == 0) Color(0xFF57E6FF) else Color(0xFFF279FF)
+                        drawCircle(star.copy(alpha = (.19f + energy * .68f +
+                            .15f * (sin(t + i * 1.4f) + 1f)).coerceIn(0f, .98f)),
+                            radius = .85f + energy * 3f + if (i % 13 == 0) 1.4f else 0f,
+                            center = point)
                     }
                 }
                 VisualMode.PARTICLES -> {
-                    // Spectral particle streams with flowing vortex trails and a soft nebula.
+                    // Luminous swarms gathered into flowing streams, not sparse random dots.
                     val rad = min(w, h)
+                    val sweep = androidx.compose.ui.graphics.Brush.sweepGradient(
+                        listOf(Color(0xFFF36AFF), Color(0xFF59DEFF),
+                            Color(0xFF735CFF), Color(0xFFE45CFF), Color(0xFFF36AFF)),
+                        center = center)
                     drawCircle(brush = androidx.compose.ui.graphics.Brush.radialGradient(
-                        listOf(Color(0x665730B8), Color(0x222453D8), Color.Transparent),
-                        center = center, radius = rad * .46f),
-                        center = center, radius = rad * .46f)
-                    for (stream in 0 until 5) {
-                        val trail = Path()
-                        val cyan = stream % 2 == 0
-                        val hue = if (cyan) Color(0xFF56E8FF) else Color(0xFFFF65EE)
-                        for (i in 0..145) {
-                            val u = i / 145f
-                            val a = stream * (2f * PI.toFloat() / 5f) +
-                                u * 6.5f + t * (.28f + stream * .025f)
-                            val energy = frame.spectrum[(i + stream * 11) % 64]
-                            val r = rad * (.055f + u * .36f) * (1f + bass * .2f)
-                            val shimmer = sin(u * 18f - t * 1.4f + stream) * (rad * .016f + energy * 9f)
-                            val p = Offset(center.x + cos(a) * (r + shimmer),
-                                center.y + sin(a) * (r + shimmer) * .82f)
-                            if (i == 0) trail.moveTo(p.x, p.y) else trail.lineTo(p.x, p.y)
-                            if (i % 2 == 0) {
-                                drawCircle(hue.copy(alpha = (.22f + .48f * (1f - u) + energy * .3f).coerceAtMost(1f)),
-                                    radius = 1.3f + (1f-u)*2.1f + energy*3.6f, center = p)
-                            }
+                        listOf(Color(0x663D1C93), Color(0x445C32C3), Color(0x2229A5D1), Color.Transparent),
+                        center = center, radius = rad * .52f),
+                        radius = rad * .52f, center = center)
+                    for (stream in 0 until 7) {
+                        val strand = Path()
+                        val colorA = if (stream % 2 == 0) Color(0xFF42DFFF) else Color(0xFFF86CFF)
+                        for (i in 0..170) {
+                            val u = i / 170f
+                            val a = stream * (2f * PI.toFloat() / 7f) +
+                                u * 7f + t * (.26f + stream * .027f)
+                            val energy = frame.spectrum[(i + stream * 13) % 64]
+                            val radius = rad * (.05f + u * .38f) * (1f + bass * .15f) +
+                                sin(u * 17f - t * .75f + stream) * rad * .011f
+                            val point = Offset(center.x + cos(a) * radius,
+                                center.y + sin(a) * radius * .88f)
+                            if (i == 0) strand.moveTo(point.x, point.y) else strand.lineTo(point.x, point.y)
+                            if (i % 2 == 0) drawCircle(colorA.copy(alpha = (.42f + energy * .43f).coerceAtMost(.98f)),
+                                radius = 1.1f + (1f-u)*1.8f + energy * 3f,
+                                center = point)
                         }
-                        drawPath(trail, hue.copy(alpha = .29f + bass * .24f),
-                            style = Stroke(width = 1.5f + bass * 2.5f, cap = StrokeCap.Round))
+                        drawPath(strand, colorA.copy(alpha = .14f + bass * .2f),
+                            style = Stroke(width = 12f, cap = StrokeCap.Round))
+                        drawPath(strand, brush = sweep, alpha = .45f,
+                            style = Stroke(width = 2.2f + bass * 2.5f, cap = StrokeCap.Round))
                     }
-                    // Extra stars provide depth and subtle bass-dependent sparkle.
-                    for (i in 0 until 230) {
-                        val seed = i * 2.399963f
-                        val depth = ((i * 37) % 101) / 101f
-                        val angle = seed + t * (.05f + depth * .09f)
-                        val distance = rad * (.08f + depth * .39f)
+                    for (i in 0 until 410) {
+                        val a = i * 2.399963f + t * (.04f + ((i * 3) % 7) * .012f)
+                        val depth = ((i * 47) % 151) / 151f
+                        val r = rad * (.1f + depth * .38f)
+                        val wobble = sin(i * .71f + t * .8f) * rad * .014f
+                        val pt = Offset(center.x + cos(a) * (r + wobble),
+                            center.y + sin(a) * (r + wobble) * .84f)
                         val energy = frame.spectrum[i % 64]
-                        val pt = Offset(center.x + cos(angle) * distance,
-                            center.y + sin(angle) * distance * .83f)
-                        val alpha = (.16f + energy * .6f + .16f * (sin(t + i * .9f) + 1f)).coerceIn(0f, .95f)
-                        drawCircle((if (i % 3 == 0) Color(0xFF60E6FF) else Color(0xFFE882FF))
-                            .copy(alpha = alpha), radius = .65f + energy * 2.2f, center = pt)
+                        val shade = if (i % 3 == 0) Color(0xFF51E4FF) else Color(0xFFF579FF)
+                        drawCircle(shade.copy(alpha = (.2f + energy * .58f +
+                            .14f * (1f + sin(t * 1.5f + i))).coerceIn(0f, 1f)),
+                            radius = .8f + energy * 2.8f + if (i % 17 == 0) 1.6f else 0f,
+                            center = pt)
                     }
                 }
                 VisualMode.WAVES -> {
