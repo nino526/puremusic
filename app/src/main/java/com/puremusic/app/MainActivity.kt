@@ -56,7 +56,6 @@ class MainActivity : ComponentActivity() {
         // Erase the obsolete optional AudD credential on upgrade; recognition now opens Google.
         getSharedPreferences("pure_music", MODE_PRIVATE).edit().remove("audd_key").apply()
         PlaybackController.loadOrder(this)
-        stopService(Intent(this, FloatingBubbleService::class.java))
         setContent { PureApp() }
         if (intent.getBooleanExtra("autoIdentify", false)) window.decorView.post { FreeSongSearch.launch(this) }
     }

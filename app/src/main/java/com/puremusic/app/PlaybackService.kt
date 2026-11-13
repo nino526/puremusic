@@ -79,7 +79,7 @@ class PlaybackService : Service() {
             NotificationChannel(CHANNEL, "Music playback", NotificationManager.IMPORTANCE_LOW)
         )
         handler.post(progressUpdate)
-        session = MediaSession(this, "PURE Music").apply {
+        session = MediaSession(this, "Nino.music").apply {
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() = toggleIfPaused()
                 override fun onPause() = pause()
@@ -203,7 +203,7 @@ class PlaybackService : Service() {
         val isPlaying = PlaybackController.playing
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(track?.title ?: "PURE Music")
+            .setContentTitle(track?.title ?: "Nino.music")
             .setContentText(track?.artist ?: "Music player")
             .setContentIntent(open)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
