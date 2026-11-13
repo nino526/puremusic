@@ -437,6 +437,7 @@ private fun PlaybackModeButton(showLabel: Boolean = false) {
 @Composable private fun Cover(size: Int = 50) { Box(Modifier.size(size.dp).background(Brush.linearGradient(listOf(Color(0xFF8D63B3), Color(0xFF293B62))), RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.MusicNote, null, tint = Color.White) } }
 @Composable private fun SwitchRow(label: String, checked: Boolean, update: (Boolean) -> Unit) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(label, modifier = Modifier.weight(1f)); Switch(checked, update) } }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FullPlayer(track: Track, playing: Boolean, position: Long, onBack: () -> Unit, onVisualizer: () -> Unit, onQueue: () -> Unit,
                        onControl: (String) -> Unit, onSeek: (Long) -> Unit) {
