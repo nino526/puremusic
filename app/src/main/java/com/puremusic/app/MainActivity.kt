@@ -254,7 +254,7 @@ class MainActivity : ComponentActivity() {
                                 Text("Search a song with Google")
                             }
                             Spacer(Modifier.height(10.dp))
-                            Text("Song recognition opens Google. No API token is needed; Google shows the results in its own app.", color = appMuted, fontSize = 12.sp)
+                            Text("Song recognition opens Google's song search and displays the result in its app.", color = appMuted, fontSize = 12.sp)
                             Spacer(Modifier.height(22.dp))
                             Text("From TikTok", fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
                             Text("Paste a shared TikTok link to open the original video. The link alone does not grant audio download rights.", color = appMuted, fontSize = 12.sp)
@@ -313,7 +313,7 @@ class MainActivity : ComponentActivity() {
                             Button(onClick = { if (Settings.canDrawOverlays(this@MainActivity)) { overlayEnabled = true; ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, FloatingBubbleService::class.java)) } else startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }) { Text("Enable Floating Button") }
                             Spacer(Modifier.height(22.dp))
                             Text("Music Recognition", fontWeight = FontWeight.Bold)
-                            Text("Use Search a song with Google in Identify. PURE Music does not collect API tokens or send microphone recordings to AudD.", fontSize = 12.sp, color = appMuted)
+                            Text("Search for a song with Google in Identify. Results appear in the Google app.", fontSize = 12.sp, color = appMuted)
                             Spacer(Modifier.height(14.dp))
                             Text("Audio visualizations require Android microphone permission to read the local player audio session. You can grant it directly in Now Playing.", color = appMuted, fontSize = 12.sp)
                         }
