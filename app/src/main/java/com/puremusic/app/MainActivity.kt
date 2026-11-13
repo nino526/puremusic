@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -35,6 +36,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
@@ -189,7 +191,7 @@ class MainActivity : ComponentActivity() {
         val appAccent = colors.primary
         MaterialTheme(colorScheme = colors) {
             Column(Modifier.fillMaxSize().background(appBg).windowInsetsPadding(WindowInsets.safeDrawing)) {
-                if (screen != "visualizer") Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 27.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (screen != "visualizer") Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Nino", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Text(".music", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = appAccent)
                     Spacer(Modifier.weight(1f))
@@ -481,7 +483,18 @@ private fun FullPlayer(track: Track, playing: Boolean, position: Long, onBack: (
         Spacer(Modifier.height(10.dp))
         Slider(value = ratio, onValueChange = { dragging = it }, onValueChangeFinished = {
             onSeek(((dragging ?: ratio) * duration).toLong()); dragging = null
-        }, modifier = Modifier.fillMaxWidth())
+        }, modifier = Modifier.fillMaxWidth(),
+            colors = SliderDefaults.colors(
+                activeTrackColor = Color(0xFFA72BE7),
+                inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = .2f)
+            ),
+            thumb = {
+                Box(Modifier.size(20.dp)
+                    .shadow(4.dp, CircleShape)
+                    .background(Color.White, CircleShape)
+                    .border(2.dp, Color(0xFFAB42ED), CircleShape))
+            }
+        )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatPlaybackTime((ratio * duration).toLong()), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             Text(formatPlaybackTime(duration), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
