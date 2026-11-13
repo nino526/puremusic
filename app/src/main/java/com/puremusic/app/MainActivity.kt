@@ -12,11 +12,15 @@ import android.view.WindowManager
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.provider.Settings
+import android.provider.MediaStore
+import android.app.Activity
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -97,6 +101,27 @@ class MainActivity : ComponentActivity() {
         var showNewPlaylist by remember { mutableStateOf(false) }
         var playlistName by remember { mutableStateOf("") }
         var addToPlaylist by remember { mutableStateOf<Track?>(null) }
+        var trackMenu by remember { mutableStateOf<Track?>(null) }
+        var deleteCandidate by remember { mutableStateOf<Track?>(null) }
+        var deleteError by remember { mutableStateOf<String?>(null) }
+        val deleteLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                songs = loadSongs(this@MainActivity)
+                deleteCandidate = null
+            }
+        }
+        fun deleteTrack(track: Track) {
+            try {
+                if (Build.VERSION.SDK_INT >= 30) {
+                    val request = MediaStore.createDeleteRequest(contentResolver, listOf(track.uri))
+                    deleteLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(request.intentSender).build())
+                } else {
+                    val deleted = contentResolver.delete(track.uri, null, null)
+                    if (deleted > 0) songs = loadSongs(this@MainActivity)
+                    else deleteError = "Android did not allow deleting this audio file."
+                }
+            } catch (e: Exception) { deleteError = "Could not request deletion: ${e.localizedMessage ?: "permission denied"}" }
+        }
         var token by remember { mutableStateOf(store.apiKey()) }
         var status by remember { mutableStateOf("Tap to recognize a song") }
         var isRecording by remember { mutableStateOf(false) }
@@ -116,20 +141,38 @@ class MainActivity : ComponentActivity() {
             if (ContextCompat.checkSelfPermission(this@MainActivity, permission) == PackageManager.PERMISSION_GRANTED) songs = loadSongs(this@MainActivity)
             else permissions.launch(arrayOf(permission))
         }
-        MaterialTheme(colorScheme = darkColorScheme(primary = purple, background = background, surface = panel, onBackground = Color.White, onSurface = Color.White)) {
-            Column(Modifier.fillMaxSize().background(background)) {
+        val appearancePrefs = remember { getSharedPreferences("pure_appearance", MODE_PRIVATE) }
+        var themeChoice by remember { mutableStateOf(appearancePrefs.getString("theme", "system") ?: "system") }
+        val systemDark = isSystemInDarkTheme()
+        val useDark = when (themeChoice) { "light" -> false; "dark" -> true; else -> systemDark }
+        val colors = if (useDark) darkColorScheme(
+            primary = purple, onPrimary = Color(0xFF1C102B), background = background,
+            onBackground = Color.White, surface = panel, onSurface = Color.White,
+            surfaceVariant = Color(0xFF323441), onSurfaceVariant = Color(0xFFE3DFEA),
+            secondary = purple, onSecondary = Color.Black, outline = Color(0xFF858391))
+        else lightColorScheme(
+            primary = Color(0xFF7946B9), onPrimary = Color.White, background = Color(0xFFF8F6FC),
+            onBackground = Color(0xFF211D29), surface = Color.White, onSurface = Color(0xFF211D29),
+            surfaceVariant = Color(0xFFEDE7F5), onSurfaceVariant = Color(0xFF494451),
+            secondary = Color(0xFF7946B9), onSecondary = Color.White, outline = Color(0xFF797382))
+        val appBg = colors.background
+        val appPanel = colors.surfaceVariant
+        val appMuted = colors.onSurfaceVariant
+        val appAccent = colors.primary
+        MaterialTheme(colorScheme = colors) {
+            Column(Modifier.fillMaxSize().background(appBg).windowInsetsPadding(WindowInsets.safeDrawing)) {
                 if (screen != "visualizer") Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 27.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("PURE ", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text("Music", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = purple)
+                    Text("Music", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = appAccent)
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { screen = "identify" }) { Icon(Icons.Default.Mic, "Identify", tint = purple) }
+                    IconButton(onClick = { screen = "identify" }) { Icon(Icons.Default.Mic, "Identify", tint = appAccent) }
                     IconButton(onClick = { screen = "settings" }) { Icon(Icons.Default.Settings, "Settings") }
                 }
                 if (screen == "songs" || screen == "playlists") {
                     OutlinedTextField(value = query, onValueChange = { query = it }, placeholder = { Text("Search songs or artists…", fontSize = 14.sp) }, leadingIcon = { Icon(Icons.Default.Search, null) }, shape = RoundedCornerShape(14.dp), singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp))
                     Row(Modifier.fillMaxWidth().padding(top = 14.dp, start = 18.dp, end = 18.dp)) {
                         listOf("songs" to "All Songs", "playlists" to "Playlists").forEach { (key, label) ->
-                            TextButton(onClick = { screen = key; selectedPlaylist = null }, modifier = Modifier.weight(1f)) { Text(label, color = if (screen == key) purple else muted) }
+                            TextButton(onClick = { screen = key; selectedPlaylist = null }, modifier = Modifier.weight(1f)) { Text(label, color = if (screen == key) appAccent else appMuted) }
                         }
                     }
                 }
@@ -142,7 +185,7 @@ class MainActivity : ComponentActivity() {
                             LazyColumn(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp)) {
                                 item {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(selectedPlaylist ?: "My Library · ${songs.size} songs", color = muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                        Text(selectedPlaylist ?: "My Library · ${songs.size} songs", color = appMuted, fontSize = 13.sp, modifier = Modifier.weight(1f))
                                         if (selectedPlaylist != null) TextButton(onClick = { selectedPlaylist = null }) { Text("Back") }
                                         IconButton(onClick = { songs = loadSongs(this@MainActivity) }) { Icon(Icons.Default.Refresh, "Refresh") }
                                     }
@@ -153,9 +196,9 @@ class MainActivity : ComponentActivity() {
                                         Spacer(Modifier.width(12.dp))
                                         Column(Modifier.weight(1f)) {
                                             Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                                            Text(track.artist, color = muted, fontSize = 12.sp, maxLines = 1)
+                                            Text(track.artist, color = appMuted, fontSize = 12.sp, maxLines = 1)
                                         }
-                                        IconButton(onClick = { addToPlaylist = track }) { Icon(Icons.Default.PlaylistAdd, "Add to playlist") }
+                                        IconButton(onClick = { trackMenu = track }) { Icon(Icons.Default.MoreVert, "Song options") }
                                     }
                                 }
                             }
@@ -166,9 +209,9 @@ class MainActivity : ComponentActivity() {
                                 key(refresh) {
                                     store.names().forEach { name ->
                                         Row(Modifier.fillMaxWidth().clickable { selectedPlaylist = name; screen = "songs" }.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.QueueMusic, null, tint = purple)
+                                            Icon(Icons.Default.QueueMusic, null, tint = appAccent)
                                             Spacer(Modifier.width(14.dp))
-                                            Column(Modifier.weight(1f)) { Text(name, fontWeight = FontWeight.SemiBold); Text("${store.songs(name).size} songs", fontSize = 12.sp, color = muted) }
+                                            Column(Modifier.weight(1f)) { Text(name, fontWeight = FontWeight.SemiBold); Text("${store.songs(name).size} songs", fontSize = 12.sp, color = appMuted) }
                                             IconButton(onClick = { store.remove(name); refresh++ }) { Icon(Icons.Default.DeleteOutline, "Delete playlist") }
                                         }
                                     }
@@ -178,9 +221,9 @@ class MainActivity : ComponentActivity() {
                         "identify" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("Identify & Download", fontSize = 23.sp, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(35.dp))
-                            Box(Modifier.size(150.dp).background(Brush.radialGradient(listOf(purple.copy(alpha = 0.5f), panel)), RoundedCornerShape(100.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.GraphicEq, null, tint = purple, modifier = Modifier.size(80.dp)) }
+                            Box(Modifier.size(150.dp).background(Brush.radialGradient(listOf(purple.copy(alpha = 0.5f), panel)), RoundedCornerShape(100.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.GraphicEq, null, tint = appAccent, modifier = Modifier.size(80.dp)) }
                             Spacer(Modifier.height(24.dp))
-                            Text(status, color = muted)
+                            Text(status, color = appMuted)
                             Spacer(Modifier.height(15.dp))
                             Button(onClick = {
                                 if (!isRecording) {
@@ -195,10 +238,10 @@ class MainActivity : ComponentActivity() {
                                 Spacer(Modifier.width(8.dp))
                                 Text("Free Song Search (Google)")
                             }
-                            Text("Without an AudD token, Listen & Identify uses this free Google option too. Results stay in Google. Availability varies by device.", color = muted, fontSize = 12.sp)
+                            Text("Without an AudD token, Listen & Identify uses this free Google option too. Results stay in Google. Availability varies by device.", color = appMuted, fontSize = 12.sp)
                             Spacer(Modifier.height(22.dp))
                             Text("From TikTok", fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
-                            Text("Paste a shared TikTok link to open the original video. The link alone does not grant audio download rights.", color = muted, fontSize = 12.sp)
+                            Text("Paste a shared TikTok link to open the original video. The link alone does not grant audio download rights.", color = appMuted, fontSize = 12.sp)
                             OutlinedTextField(link, { link = it }, label = { Text("TikTok video link") }, modifier = Modifier.fillMaxWidth(), maxLines = 2)
                             Button(onClick = { runCatching { val parsed = Uri.parse(link.trim()); if (parsed.scheme == "https" && (parsed.host == "tiktok.com" || parsed.host?.endsWith(".tiktok.com") == true)) startActivity(Intent(Intent.ACTION_VIEW, parsed)) else status = "Enter a valid TikTok HTTPS link." } }, modifier = Modifier.fillMaxWidth()) { Text("Open TikTok Video") }
                             Spacer(Modifier.height(20.dp))
@@ -208,7 +251,7 @@ class MainActivity : ComponentActivity() {
                         "downloads" -> Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
                             Text("Downloads", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(12.dp))
-                            Text("Download from an authorized direct audio URL (HTTPS). TikTok video links cannot be used here.", fontSize = 13.sp, color = muted)
+                            Text("Download from an authorized direct audio URL (HTTPS). TikTok video links cannot be used here.", fontSize = 13.sp, color = appMuted)
                             OutlinedTextField(audioUrl, { audioUrl = it }, label = { Text("Direct audio file URL") }, modifier = Modifier.fillMaxWidth())
                             Button(onClick = {
                                 try {
@@ -220,13 +263,30 @@ class MainActivity : ComponentActivity() {
                                     downloadStatus = "Download queued. Refresh your library when finished."
                                 } catch (_: Exception) { downloadStatus = "Enter a supported, authorized HTTPS audio file URL." }
                             }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Download, null); Text("Download Audio") }
-                            Text(downloadStatus, color = muted, fontSize = 13.sp)
+                            Text(downloadStatus, color = appMuted, fontSize = 13.sp)
                         }
                         "settings" -> Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
                             Text("Settings", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(12.dp))
+                            Text("Appearance", fontWeight = FontWeight.Bold)
+                            listOf("system" to "System default", "light" to "Light", "dark" to "Dark").forEach { (choice, label) ->
+                                Row(Modifier.fillMaxWidth().clickable {
+                                    themeChoice = choice
+                                    appearancePrefs.edit().putString("theme", choice).apply()
+                                }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(selected = themeChoice == choice, onClick = {
+                                        themeChoice = choice
+                                        appearancePrefs.edit().putString("theme", choice).apply()
+                                    })
+                                    Text(label)
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            Text("Visualizer", fontWeight = FontWeight.Bold)
+                            Text("Five effects. Select and save the effect inside Now Playing or in full-screen mode.", fontSize = 12.sp, color = appMuted)
                             Spacer(Modifier.height(20.dp))
                             Text("Floating Recognition", fontWeight = FontWeight.Bold)
-                            Text("Movable shortcut over other apps. Tap it to start identification in PURE Music.", fontSize = 12.sp, color = muted)
+                            Text("Movable shortcut over other apps. Tap it to start identification in PURE Music.", fontSize = 12.sp, color = appMuted)
                             SwitchRow("Floating Button", overlayEnabled) { on ->
                                 overlayEnabled = on
                                 if (on) {
@@ -237,48 +297,69 @@ class MainActivity : ComponentActivity() {
                             Button(onClick = { if (Settings.canDrawOverlays(this@MainActivity)) { overlayEnabled = true; ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, FloatingBubbleService::class.java)) } else startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }) { Text("Enable Floating Button") }
                             Spacer(Modifier.height(22.dp))
                             Text("Music Recognition", fontWeight = FontWeight.Bold)
-                            Text("Free option: use Google Song Search in Identify. The built-in 12-second Listen & Identify still uses optional AudD and needs your own token. No background microphone recording.", fontSize = 12.sp, color = muted)
+                            Text("Free option: use Google Song Search in Identify. The built-in 12-second Listen & Identify still uses optional AudD and needs your own token. No background microphone recording.", fontSize = 12.sp, color = appMuted)
                             OutlinedTextField(token, { token = it }, label = { Text("AudD API token") }, modifier = Modifier.fillMaxWidth())
                             Button(onClick = { store.setApiKey(token) }) { Text("Save API Token") }
                             Spacer(Modifier.height(14.dp))
-                            Text("Automatic background listening is not enabled in this prototype. It requires a separate, privacy-conscious microphone foreground service.", color = muted, fontSize = 12.sp)
+                            Text("Automatic background listening is not enabled in this prototype. It requires a separate, privacy-conscious microphone foreground service.", color = appMuted, fontSize = 12.sp)
                         }
                     }
                 }
                 if (current != null && screen != "player" && screen != "visualizer") {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
-                        .background(panel, RoundedCornerShape(16.dp)).padding(7.dp)) {
+                        .background(appPanel, RoundedCornerShape(16.dp)).padding(7.dp)) {
                         Row(Modifier.fillMaxWidth().clickable { showPlayer() }.padding(4.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Cover(39)
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(current.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                                Text(current.artist, fontSize = 11.sp, color = muted, maxLines = 1)
+                                Text(current.artist, fontSize = 11.sp, color = appMuted, maxLines = 1)
                             }
-                            Icon(Icons.Default.KeyboardArrowUp, "Open full player", tint = muted)
+                            Icon(Icons.Default.KeyboardArrowUp, "Open full player", tint = appMuted)
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { PlaybackController.shuffle = !PlaybackController.shuffle }) {
-                                Icon(Icons.Default.Shuffle, "Shuffle", tint = if (PlaybackController.shuffle) purple else muted)
+                                Icon(Icons.Default.Shuffle, "Shuffle", tint = if (PlaybackController.shuffle) appAccent else appMuted)
                             }
                             IconButton(onClick = { command(PlaybackService.PREVIOUS) }) { Icon(Icons.Default.SkipPrevious, "Previous") }
                             IconButton(onClick = { command(PlaybackService.TOGGLE) }) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or pause") }
                             IconButton(onClick = { command(PlaybackService.NEXT) }) { Icon(Icons.Default.SkipNext, "Next") }
                             IconButton(onClick = { PlaybackController.repeat = !PlaybackController.repeat }) {
-                                Icon(Icons.Default.Repeat, "Repeat", tint = if (PlaybackController.repeat) purple else muted)
+                                Icon(Icons.Default.Repeat, "Repeat", tint = if (PlaybackController.repeat) appAccent else appMuted)
                             }
                             IconButton(onClick = { showQueue = true }) { Icon(Icons.Default.QueueMusic, "Queue") }
                         }
                     }
                 }
-                if (screen != "player" && screen != "visualizer") NavigationBar(containerColor = background) {
+                if (screen != "player" && screen != "visualizer") NavigationBar(containerColor = appBg, tonalElevation = 0.dp) {
                     listOf(Triple("songs", "Songs", Icons.Default.LibraryMusic), Triple("playlists", "Playlists", Icons.Default.QueueMusic), Triple("identify", "Identify", Icons.Default.GraphicEq), Triple("downloads", "Downloads", Icons.Default.Download)).forEach { (key, label, icon) ->
                         NavigationBarItem(selected = screen == key, onClick = { screen = key }, label = { Text(label, fontSize = 10.sp) }, icon = { Icon(icon, label) })
                     }
                 }
             }
+            trackMenu?.let { track ->
+                AlertDialog(onDismissRequest = { trackMenu = null },
+                    title = { Text(track.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                    text = { Column {
+                        TextButton(onClick = { PlaybackController.queue = PlaybackController.queue + track; trackMenu = null }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.QueueMusic, null); Spacer(Modifier.width(10.dp)); Text("Play later", modifier = Modifier.weight(1f)) }
+                        TextButton(onClick = { PlaybackController.queue = PlaybackController.queue + track; trackMenu = null }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.PlaylistPlay, null); Spacer(Modifier.width(10.dp)); Text("Add to queue", modifier = Modifier.weight(1f)) }
+                        TextButton(onClick = { trackMenu = null; addToPlaylist = track }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.PlaylistAdd, null); Spacer(Modifier.width(10.dp)); Text("Add to playlist", modifier = Modifier.weight(1f)) }
+                        TextButton(onClick = {
+                            trackMenu = null
+                            val share = Intent(Intent.ACTION_SEND).setType("audio/*").putExtra(Intent.EXTRA_STREAM, track.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            startActivity(Intent.createChooser(share, "Share song"))
+                        }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Share, null); Spacer(Modifier.width(10.dp)); Text("Share", modifier = Modifier.weight(1f)) }
+                        TextButton(onClick = { trackMenu = null; deleteCandidate = track }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.DeleteOutline, null); Spacer(Modifier.width(10.dp)); Text("Delete from phone", modifier = Modifier.weight(1f)) }
+                    } }, confirmButton = { TextButton(onClick = { trackMenu = null }) { Text("Close") } })
+            }
+            deleteCandidate?.let { track -> AlertDialog(onDismissRequest = { deleteCandidate = null },
+                title = { Text("Delete song from phone?") },
+                text = { Text("${track.title} will be removed from device storage, not only from PURE Music. Android may ask for confirmation. This cannot be undone.") },
+                confirmButton = { TextButton(onClick = { deleteCandidate = null; deleteTrack(track) }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
+                dismissButton = { TextButton(onClick = { deleteCandidate = null }) { Text("Cancel") } }) }
+            deleteError?.let { message -> AlertDialog(onDismissRequest = { deleteError = null }, title = { Text("Deletion failed") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { deleteError = null }) { Text("OK") } }) }
             if (showQueue) AlertDialog(onDismissRequest = { showQueue = false },
                 title = { Text("Up next") },
                 text = { LazyColumn(Modifier.heightIn(max = 340.dp)) {
@@ -286,11 +367,11 @@ class MainActivity : ComponentActivity() {
                         Row(Modifier.fillMaxWidth().clickable {
                             play(track, PlaybackController.queue); showQueue = false
                         }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.MusicNote, null, tint = purple)
+                            Icon(Icons.Default.MusicNote, null, tint = appAccent)
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(track.artist, color = muted, fontSize = 12.sp)
+                                Text(track.artist, color = appMuted, fontSize = 12.sp)
                             }
                         }
                     }
@@ -315,35 +396,35 @@ private fun FullPlayer(track: Track, playing: Boolean, position: Long, onBack: (
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.KeyboardArrowDown, "Back to library") }
             Spacer(Modifier.weight(1f))
-            Text("NOW PLAYING", fontSize = 12.sp, color = muted, fontWeight = FontWeight.Bold)
+            Text("NOW PLAYING", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
             Spacer(Modifier.width(48.dp))
         }
-        Spacer(Modifier.height(20.dp))
-        Box(Modifier.fillMaxWidth().aspectRatio(1f)
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.fillMaxWidth().heightIn(max = 330.dp).aspectRatio(1f)
             .background(Brush.linearGradient(listOf(Color(0xFF845BAD), Color(0xFF26395D))), RoundedCornerShape(24.dp)),
             contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.MusicNote, null, tint = Color.White, modifier = Modifier.size(116.dp))
+            EmbeddedVisualizer(modifier = Modifier.fillMaxSize())
         }
-        Spacer(Modifier.height(32.dp))
-        Text(track.title, fontSize = 25.sp, fontWeight = FontWeight.Bold, maxLines = 2,
+        Spacer(Modifier.height(12.dp))
+        Text(track.title, fontSize = 21.sp, fontWeight = FontWeight.Bold, maxLines = 2,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(5.dp))
-        Text(track.artist, color = muted, fontSize = 16.sp, modifier = Modifier.fillMaxWidth())
-        Spacer(Modifier.height(22.dp))
+        Text(track.artist, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(10.dp))
         Slider(value = ratio, onValueChange = { dragging = it }, onValueChangeFinished = {
             onSeek(((dragging ?: ratio) * duration).toLong()); dragging = null
         }, modifier = Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatPlaybackTime((ratio * duration).toLong()), color = muted, fontSize = 12.sp)
-            Text(formatPlaybackTime(duration), color = muted, fontSize = 12.sp)
+            Text(formatPlaybackTime((ratio * duration).toLong()), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            Text(formatPlaybackTime(duration), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
-        Spacer(Modifier.height(22.dp))
+        Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly) {
             val shuffle = PlaybackController.shuffle
             IconButton(onClick = { PlaybackController.shuffle = !shuffle }) {
-                Icon(Icons.Default.Shuffle, "Shuffle", tint = if (shuffle) purple else muted)
+                Icon(Icons.Default.Shuffle, "Shuffle", tint = if (shuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = { onControl(PlaybackService.PREVIOUS) }) { Icon(Icons.Default.SkipPrevious, "Previous", modifier = Modifier.size(38.dp)) }
             FilledIconButton(onClick = { onControl(PlaybackService.TOGGLE) }, modifier = Modifier.size(70.dp)) {
@@ -352,7 +433,7 @@ private fun FullPlayer(track: Track, playing: Boolean, position: Long, onBack: (
             IconButton(onClick = { onControl(PlaybackService.NEXT) }) { Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(38.dp)) }
             val repeat = PlaybackController.repeat
             IconButton(onClick = { PlaybackController.repeat = !repeat }) {
-                Icon(Icons.Default.Repeat, "Repeat current song", tint = if (repeat) purple else muted)
+                Icon(Icons.Default.Repeat, "Repeat current song", tint = if (repeat) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -360,7 +441,7 @@ private fun FullPlayer(track: Track, playing: Boolean, position: Long, onBack: (
             TextButton(onClick = onQueue) { Icon(Icons.Default.QueueMusic, "Queue"); Spacer(Modifier.width(8.dp)); Text("Up next") }
             TextButton(onClick = onVisualizer) { Icon(Icons.Default.GraphicEq, "Visualizer"); Spacer(Modifier.width(8.dp)); Text("Visualizer") }
         }
-        Spacer(Modifier.height(22.dp))
+        Spacer(Modifier.height(8.dp))
     }
 }
 private fun formatPlaybackTime(milliseconds: Long): String {

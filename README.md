@@ -57,3 +57,6 @@ Build with Android Studio (Android SDK 35, Java 17, Gradle Android plugin per ex
 ## Tablet build workflow
 
 GitHub Actions configuration is included in `.github/workflows/build-apk.yml`. The workflow automatically starts when committed to `main`, and can be triggered manually from the Actions tab. It builds a debug APK with Android SDK 35 and JDK 17 and uploads the resulting artifact. The workflow has not yet run; successful compilation and behavior must be verified. See `BUILD_ON_TABLET.md`.
+
+## v0.6.1: per-song actions
+Each local song has a three-dot menu: Play later, Add to queue, Add to playlist, Share, and Delete from phone. Deleting requires a second in-app confirmation and Android's MediaStore deletion approval on Android 11+. Deletion removes the actual audio file from device storage; it is not merely hiding a library entry. Refresh the library after deletion. The appearance and five visualization modes from v0.6 remain available.

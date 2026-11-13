@@ -38,7 +38,7 @@ import kotlin.math.*
 // Original procedural visual effects inspired by classic media-player categories.
 // No external visualizer assets, network calls or paid libraries are used.
 private enum class VisualMode(val title: String) {
-    AMBIENCE("Ambience"), ALCHEMY("Alchemy"), BARS_AND_WAVES("Bars and Waves")
+    PLASMA("Plasma"), ALCHEMY("Alchemy"), PARTICLES("Particles"), SPECTRUM("Spectrum"), WAVES("Waves")
 }
 
 private data class AudioFrame(val spectrum: List<Float>, val wave: List<Float>, val bass: Float, val beat: Float) {
@@ -72,10 +72,10 @@ private fun readFrame(fft: ByteArray, waveform: ByteArray, previousBass: Float):
 }
 
 @Composable
-fun VisualizerScreen(onBack: () -> Unit) {
+fun VisualizerScreen(onBack: () -> Unit, embedded: Boolean = false) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("pure_visualizer", 0) }
-    var mode by remember { mutableStateOf(VisualMode.entries.getOrElse(prefs.getInt("mode", 0)) { VisualMode.AMBIENCE }) }
+    var mode by remember { mutableStateOf(VisualMode.entries.getOrElse(prefs.getInt("mode", 1)) { VisualMode.ALCHEMY }) }
     val palettes = remember { listOf(Color(0xFFAE88FF), Color(0xFF45D7FF), Color(0xFFFF648C), Color(0xFF5CF2B2), Color(0xFFFFC86C)) }
     var paletteIndex by remember { mutableIntStateOf(prefs.getInt("color", 0).coerceIn(0, palettes.lastIndex)) }
     var fps by remember { mutableIntStateOf(prefs.getInt("fps", 30).takeIf { it in listOf(15, 30, 60) } ?: 30) }
@@ -140,7 +140,7 @@ fun VisualizerScreen(onBack: () -> Unit) {
             val bass = frame.bass * intensity
             val pulse = (1f + bass * .45f + frame.beat * .4f)
             when (mode) {
-                VisualMode.AMBIENCE -> {
+                VisualMode.PLASMA -> {
                     // Smooth concentric, rotating wave ribbons with bass-driven radius.
                     for (layer in 0 until 15) {
                         val path = Path()
@@ -175,7 +175,27 @@ fun VisualizerScreen(onBack: () -> Unit) {
                         drawPath(path, color.copy(alpha = .3f + ring * .055f), style = Stroke(width = 1.3f + bass * 2.2f))
                     }
                 }
-                VisualMode.BARS_AND_WAVES -> {
+                VisualMode.PARTICLES -> {
+                    for (i in 0 until 500) {
+                        val a = i * 2.399963f + t * (.12f + (i % 7) * .014f)
+                        val band = frame.spectrum[i % 64]
+                        val r = min(w, h) * (.06f + (i % 115) / 140f) * (1f + band * .45f * intensity)
+                        val p = Offset(center.x + cos(a) * r, center.y + sin(a) * r)
+                        drawCircle(color.copy(alpha = (.2f + band * .8f).coerceAtMost(1f)), radius = 1.2f + band * 5f, center = p)
+                    }
+                }
+                VisualMode.WAVES -> {
+                    for (layer in 0 until 9) {
+                        val path = Path()
+                        frame.wave.forEachIndexed { i, sample ->
+                            val x = i * w / (frame.wave.size - 1)
+                            val y = h * (.25f + layer * .065f) + sample * h * (.05f + layer * .012f) * intensity + sin(t + i * .025f + layer) * bass * 24f
+                            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                        }
+                        drawPath(path, color.copy(alpha = .18f + layer * .075f), style = Stroke(width = 1.5f + bass * 3f))
+                    }
+                }
+                VisualMode.SPECTRUM -> {
                     val count = 48
                     val gap = w / count
                     val baseline = h * .64f
@@ -195,7 +215,7 @@ fun VisualizerScreen(onBack: () -> Unit) {
                 }
             }
         }
-        if (showControls) {
+        if (showControls && !embedded) {
             Column(Modifier.fillMaxWidth().align(Alignment.TopCenter).background(Color(0xD9111220)).padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back", tint = Color.White) }
@@ -219,7 +239,7 @@ fun VisualizerScreen(onBack: () -> Unit) {
                 Text("Tap the animation to hide or show controls", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
             }
         }
-        if (showSettings) {
+        if (showSettings && !embedded) {
             AlertDialog(onDismissRequest = { showSettings = false }, title = { Text("Visualizer settings") }, text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Color")
@@ -237,6 +257,27 @@ fun VisualizerScreen(onBack: () -> Unit) {
                     }
                 }
             }, confirmButton = { TextButton(onClick = { showSettings = false }) { Text("Done") } })
+        }
+    }
+}
+
+@Composable
+fun EmbeddedVisualizer(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("pure_visualizer", 0) }
+    var modeIndex by remember { mutableIntStateOf(prefs.getInt("mode", 1).coerceIn(0, VisualMode.entries.lastIndex)) }
+    Column(modifier.background(Color(0xFF05060E))) {
+        Box(Modifier.weight(1f)) {
+            // Same audio-reactive rendering and selected mode as the full-screen visualizer.
+            key(modeIndex) { VisualizerScreen(onBack = {}, embedded = true) }
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            VisualMode.entries.forEachIndexed { index, effect ->
+                FilterChip(selected = modeIndex == index, onClick = {
+                    modeIndex = index
+                    prefs.edit().putInt("mode", index).apply()
+                }, label = { Text(effect.title, style = MaterialTheme.typography.labelSmall) })
+            }
         }
     }
 }
