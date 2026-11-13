@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.view.WindowManager
+import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.provider.Settings
 import android.provider.MediaStore
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import kotlinx.coroutines.delay
 import androidx.compose.ui.text.style.TextAlign
 import java.net.URL
@@ -49,6 +51,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestedScreen = intent.getStringExtra("screen") ?: if (intent.action == Intent.ACTION_SEND) "identify" else "songs"
+        // Erase the obsolete optional AudD credential on upgrade; recognition now opens Google.
+        getSharedPreferences("pure_music", MODE_PRIVATE).edit().remove("audd_key").apply()
+        PlaybackController.loadOrder(this)
         setContent { PureApp() }
     }
     override fun onNewIntent(intent: Intent) {
@@ -76,7 +81,7 @@ class MainActivity : ComponentActivity() {
         DisposableEffect(screen) {
             if (screen == "visualizer") {
                 if (Build.VERSION.SDK_INT >= 30) {
-                    window.insetsController?.hide(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
+                    window.insetsController?.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
                     window.insetsController?.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 } else {
                     @Suppress("DEPRECATION")
@@ -85,7 +90,7 @@ class MainActivity : ComponentActivity() {
             }
             onDispose {
                 if (screen == "visualizer") {
-                    if (Build.VERSION.SDK_INT >= 30) window.insetsController?.show(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
+                    if (Build.VERSION.SDK_INT >= 30) window.insetsController?.show(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
                     else {
                         @Suppress("DEPRECATION")
                         window.decorView.systemUiVisibility = 0
@@ -121,20 +126,12 @@ class MainActivity : ComponentActivity() {
                 }
             } catch (e: Exception) { deleteError = "Could not request deletion: ${e.localizedMessage ?: "permission denied"}" }
         }
-        var token by remember { mutableStateOf(store.apiKey()) }
-        var status by remember { mutableStateOf("Tap to recognize a song") }
-        var isRecording by remember { mutableStateOf(false) }
+        var status by remember { mutableStateOf("Recognize a song using the Google app") }
         var link by remember { mutableStateOf(if (intent.action == Intent.ACTION_SEND) intent.getStringExtra(Intent.EXTRA_TEXT) ?: "" else "") }
         var audioUrl by remember { mutableStateOf("") }
         var downloadStatus by remember { mutableStateOf("") }
         var overlayEnabled by remember { mutableStateOf(false) }
         val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { songs = loadSongs(this) }
-        val microphone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                isRecording = true; status = "Listening for 12 seconds…"
-                Recognition.captureAndIdentify(this, token) { response -> runOnUiThread { status = response; isRecording = false; if (response.contains(" — ")) { store.appendHistory(response); refresh++ } } }
-            } else status = "Microphone permission is required."
-        }
         LaunchedEffect(Unit) {
             val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
             if (ContextCompat.checkSelfPermission(this@MainActivity, permission) == PackageManager.PERMISSION_GRANTED) songs = loadSongs(this@MainActivity)
@@ -144,6 +141,11 @@ class MainActivity : ComponentActivity() {
         var themeChoice by remember { mutableStateOf(appearancePrefs.getString("theme", "system") ?: "system") }
         val systemDark = isSystemInDarkTheme()
         val useDark = when (themeChoice) { "light" -> false; "dark" -> true; else -> systemDark }
+        SideEffect {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.isAppearanceLightStatusBars = !useDark && screen != "visualizer"
+            controller.isAppearanceLightNavigationBars = !useDark && screen != "visualizer"
+        }
         val colors = if (useDark) darkColorScheme(
             primary = purple, onPrimary = Color(0xFF1C102B), background = background,
             onBackground = Color.White, surface = panel, onSurface = Color.White,
@@ -224,20 +226,13 @@ class MainActivity : ComponentActivity() {
                             Spacer(Modifier.height(24.dp))
                             Text(status, color = appMuted)
                             Spacer(Modifier.height(15.dp))
-                            Button(onClick = {
-                                if (!isRecording) {
-                                    if (token.isBlank()) status = FreeSongSearch.launch(this@MainActivity)
-                                    else if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) microphone.launch(Manifest.permission.RECORD_AUDIO)
-                                    else { isRecording = true; status = "Listening for 12 seconds…"; Recognition.captureAndIdentify(this@MainActivity, token) { answer -> runOnUiThread { status = answer; isRecording = false; if (answer.contains(" — ")) { store.appendHistory(answer); refresh++ } } } }
-                                }
-                            }, enabled = !isRecording, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Mic, null); Spacer(Modifier.width(8.dp)); Text(if (isRecording) "Listening…" else "Listen & Identify") }
-                            Spacer(Modifier.height(12.dp))
-                            OutlinedButton(onClick = { status = FreeSongSearch.launch(this@MainActivity) }, modifier = Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.MusicNote, null)
+                            Button(onClick = { status = FreeSongSearch.launch(this@MainActivity) }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Mic, null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Free Song Search (Google)")
+                                Text("Search a song with Google")
                             }
-                            Text("Without an AudD token, Listen & Identify uses this free Google option too. Results stay in Google. Availability varies by device.", color = appMuted, fontSize = 12.sp)
+                            Spacer(Modifier.height(10.dp))
+                            Text("Song recognition opens Google. No API token is needed; Google shows the results in its own app.", color = appMuted, fontSize = 12.sp)
                             Spacer(Modifier.height(22.dp))
                             Text("From TikTok", fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
                             Text("Paste a shared TikTok link to open the original video. The link alone does not grant audio download rights.", color = appMuted, fontSize = 12.sp)
@@ -296,38 +291,36 @@ class MainActivity : ComponentActivity() {
                             Button(onClick = { if (Settings.canDrawOverlays(this@MainActivity)) { overlayEnabled = true; ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, FloatingBubbleService::class.java)) } else startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }) { Text("Enable Floating Button") }
                             Spacer(Modifier.height(22.dp))
                             Text("Music Recognition", fontWeight = FontWeight.Bold)
-                            Text("Free option: use Google Song Search in Identify. The built-in 12-second Listen & Identify still uses optional AudD and needs your own token. No background microphone recording.", fontSize = 12.sp, color = appMuted)
-                            OutlinedTextField(token, { token = it }, label = { Text("AudD API token") }, modifier = Modifier.fillMaxWidth())
-                            Button(onClick = { store.setApiKey(token) }) { Text("Save API Token") }
+                            Text("Use Search a song with Google in Identify. PURE Music does not collect API tokens or send microphone recordings to AudD.", fontSize = 12.sp, color = appMuted)
                             Spacer(Modifier.height(14.dp))
-                            Text("Automatic background listening is not enabled in this prototype. It requires a separate, privacy-conscious microphone foreground service.", color = appMuted, fontSize = 12.sp)
+                            Text("Audio visualizations require Android microphone permission to read the local player audio session. You can grant it directly in Now Playing.", color = appMuted, fontSize = 12.sp)
                         }
                     }
                 }
                 if (current != null && screen != "player" && screen != "visualizer") {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
                         .background(appPanel, RoundedCornerShape(16.dp)).padding(7.dp)) {
-                        Row(Modifier.fillMaxWidth().clickable { showPlayer() }.padding(4.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Cover(39)
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(current.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                                Text(current.artist, fontSize = 11.sp, color = appMuted, maxLines = 1)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.weight(1f).clickable { showPlayer() }.padding(4.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Cover(39)
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(current.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                                    Text(current.artist, fontSize = 11.sp, color = appMuted, maxLines = 1)
+                                }
+                                Icon(Icons.Default.KeyboardArrowUp, "Open full player", tint = appMuted)
                             }
-                            Icon(Icons.Default.KeyboardArrowUp, "Open full player", tint = appMuted)
+                            IconButton(onClick = { command(PlaybackService.STOP); screen = "songs" }) {
+                                Icon(Icons.Default.Close, "Close mini player and stop music", tint = appMuted)
+                            }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { PlaybackController.shuffle = !PlaybackController.shuffle }) {
-                                Icon(Icons.Default.Shuffle, "Shuffle", tint = if (PlaybackController.shuffle) appAccent else appMuted)
-                            }
+                            PlaybackModeButton()
                             IconButton(onClick = { command(PlaybackService.PREVIOUS) }) { Icon(Icons.Default.SkipPrevious, "Previous") }
                             IconButton(onClick = { command(PlaybackService.TOGGLE) }) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or pause") }
                             IconButton(onClick = { command(PlaybackService.NEXT) }) { Icon(Icons.Default.SkipNext, "Next") }
-                            IconButton(onClick = { PlaybackController.repeat = !PlaybackController.repeat }) {
-                                Icon(Icons.Default.Repeat, "Repeat", tint = if (PlaybackController.repeat) appAccent else appMuted)
-                            }
                             IconButton(onClick = { showQueue = true }) { Icon(Icons.Default.QueueMusic, "Queue") }
                         }
                     }
@@ -381,6 +374,26 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
+private fun PlaybackModeButton(showLabel: Boolean = false) {
+    val context = LocalContext.current
+    val order = PlaybackController.order
+    val icon = when (order) {
+        PlaybackOrder.NORMAL -> Icons.Default.PlaylistPlay
+        PlaybackOrder.SHUFFLE -> Icons.Default.Shuffle
+        PlaybackOrder.REPEAT_ALL -> Icons.Default.Repeat
+        PlaybackOrder.REPEAT_ONE -> Icons.Default.RepeatOne
+    }
+    val tint = if (order == PlaybackOrder.NORMAL) MaterialTheme.colorScheme.onSurfaceVariant
+               else MaterialTheme.colorScheme.primary
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        IconButton(onClick = { PlaybackController.cycleOrder(context) }) {
+            Icon(icon, "Playback mode: ${order.title}. Tap to switch", tint = tint)
+        }
+        if (showLabel) Text(order.title, color = tint, fontSize = 10.sp)
+    }
+}
+
 @Composable private fun Cover(size: Int = 50) { Box(Modifier.size(size.dp).background(Brush.linearGradient(listOf(Color(0xFF8D63B3), Color(0xFF293B62))), RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.MusicNote, null, tint = Color.White) } }
 @Composable private fun SwitchRow(label: String, checked: Boolean, update: (Boolean) -> Unit) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(label, modifier = Modifier.weight(1f)); Switch(checked, update) } }
 
@@ -421,19 +434,12 @@ private fun FullPlayer(track: Track, playing: Boolean, position: Long, onBack: (
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly) {
-            val shuffle = PlaybackController.shuffle
-            IconButton(onClick = { PlaybackController.shuffle = !shuffle }) {
-                Icon(Icons.Default.Shuffle, "Shuffle", tint = if (shuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            PlaybackModeButton(showLabel = true)
             IconButton(onClick = { onControl(PlaybackService.PREVIOUS) }) { Icon(Icons.Default.SkipPrevious, "Previous", modifier = Modifier.size(38.dp)) }
             FilledIconButton(onClick = { onControl(PlaybackService.TOGGLE) }, modifier = Modifier.size(70.dp)) {
                 Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or pause", modifier = Modifier.size(34.dp))
             }
             IconButton(onClick = { onControl(PlaybackService.NEXT) }) { Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(38.dp)) }
-            val repeat = PlaybackController.repeat
-            IconButton(onClick = { PlaybackController.repeat = !repeat }) {
-                Icon(Icons.Default.Repeat, "Repeat current song", tint = if (repeat) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
         }
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {

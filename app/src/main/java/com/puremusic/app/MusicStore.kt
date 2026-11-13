@@ -54,8 +54,6 @@ class PlaylistStore(private val context: Context) {
         history().filter { it != item }.take(99).forEach { arr.put(it) }
         prefs.edit().putString("history", arr.toString()).apply()
     }
-    fun apiKey() = prefs.getString("audd_key", "") ?: ""
-    fun setApiKey(key: String) { prefs.edit().putString("audd_key", key.trim()).apply() }
     private fun data() = try { JSONObject(prefs.getString("playlists", "{}")) } catch (_: Exception) { JSONObject() }
     private fun save(json: JSONObject) { prefs.edit().putString("playlists", json.toString()).apply() }
 }

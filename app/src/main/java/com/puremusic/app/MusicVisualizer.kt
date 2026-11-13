@@ -33,6 +33,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlin.math.*
 
 // Original procedural visual effects inspired by classic media-player categories.
@@ -99,8 +100,18 @@ fun VisualizerScreen(onBack: () -> Unit, embedded: Boolean = false) {
     }
     val sessionId = PlaybackController.audioSessionId
     val isPlaying = PlaybackController.playing
+    // The animation clock must not depend on audiofx capture: some devices return
+    // silence or temporarily fail to provide an FFT even while playback continues.
+    LaunchedEffect(visible, isPlaying, fps) {
+        if (!visible || !isPlaying) return@LaunchedEffect
+        while (true) {
+            tick++
+            delay(1000L / fps)
+        }
+    }
     LaunchedEffect(hasPermission, sessionId, visible, isPlaying, fps) {
         frame = AudioFrame.EMPTY
+        captureError = null
         if (!hasPermission || sessionId <= 0 || !visible || !isPlaying) return@LaunchedEffect
         var effect: Visualizer? = null
         try {
@@ -112,7 +123,7 @@ fun VisualizerScreen(onBack: () -> Unit, embedded: Boolean = false) {
             val fft = ByteArray(size)
             val wave = ByteArray(size)
             var previousBass = 0f
-            captureError = null
+            var failures = 0
             while (true) {
                 val okFft = effect.getFft(fft) == Visualizer.SUCCESS
                 val okWave = effect.getWaveForm(wave) == Visualizer.SUCCESS
@@ -120,10 +131,19 @@ fun VisualizerScreen(onBack: () -> Unit, embedded: Boolean = false) {
                     val next = readFrame(fft, wave, previousBass)
                     previousBass = next.bass * .65f + previousBass * .35f
                     frame = next
-                    tick++
+                    failures = 0
+                    captureError = null
+                } else {
+                    failures++
+                    if (failures >= fps * 2) {
+                        captureError = "Audio capture is unavailable. Animation is in ambient mode until sound capture works."
+                        break
+                    }
                 }
                 delay(1000L / fps)
             }
+        } catch (cancel: CancellationException) {
+            throw cancel
         } catch (e: Exception) {
             captureError = "Audio visualization unavailable on this device: ${e.localizedMessage ?: "audio effect failed"}"
         } finally {
@@ -214,6 +234,27 @@ fun VisualizerScreen(onBack: () -> Unit, embedded: Boolean = false) {
                     drawPath(path, color.copy(alpha = .95f), style = Stroke(width = 3f, cap = StrokeCap.Round))
                 }
             }
+        }
+        if (embedded && !hasPermission) {
+            Column(Modifier.align(Alignment.Center).padding(18.dp)
+                .background(Color(0xD9111220), RoundedCornerShape(14.dp)).padding(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Enable music-reactive visualization", color = Color.White)
+                Spacer(Modifier.height(6.dp))
+                Button(onClick = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }) {
+                    Text("Allow audio visualization")
+                }
+                Text("Android requires audio permission to analyze the local song.",
+                    color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+            }
+        } else if (embedded && !isPlaying) {
+            Text("Paused — press Play to animate", color = Color.White,
+                modifier = Modifier.align(Alignment.Center).background(Color(0xBB111220), RoundedCornerShape(8.dp)).padding(8.dp),
+                style = MaterialTheme.typography.labelSmall)
+        } else if (embedded && captureError != null) {
+            Text(captureError!!, color = Color.White,
+                modifier = Modifier.align(Alignment.BottomCenter).background(Color(0xBB111220)).padding(6.dp),
+                style = MaterialTheme.typography.labelSmall)
         }
         if (showControls && !embedded) {
             Column(Modifier.fillMaxWidth().align(Alignment.TopCenter).background(Color(0xD9111220)).padding(12.dp)) {

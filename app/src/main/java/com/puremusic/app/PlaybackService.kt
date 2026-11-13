@@ -15,6 +15,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
+/** One playback mode button cycles through all supported playback orders. */
+enum class PlaybackOrder(val title: String) {
+    NORMAL("Normal"), SHUFFLE("Shuffle"), REPEAT_ALL("Repeat all"), REPEAT_ONE("Repeat one")
+}
+
 /** One playback state for the full-screen player, mini-player and Android media controls. */
 object PlaybackController {
     var current by mutableStateOf<Track?>(null)
@@ -25,8 +30,22 @@ object PlaybackController {
     /** The actual MediaPlayer session, updated whenever a track changes. */
     var audioSessionId by mutableStateOf(0)
         internal set
-    var repeat by mutableStateOf(false)
-    var shuffle by mutableStateOf(false)
+    var order by mutableStateOf(PlaybackOrder.NORMAL)
+        private set
+    private var orderLoaded = false
+    fun loadOrder(context: Context) {
+        if (orderLoaded) return
+        val ordinal = context.getSharedPreferences("pure_playback", Context.MODE_PRIVATE)
+            .getInt("playback_order", 0)
+        order = PlaybackOrder.entries.getOrElse(ordinal) { PlaybackOrder.NORMAL }
+        orderLoaded = true
+    }
+    fun cycleOrder(context: Context) {
+        loadOrder(context)
+        order = PlaybackOrder.entries[(order.ordinal + 1) % PlaybackOrder.entries.size]
+        context.getSharedPreferences("pure_playback", Context.MODE_PRIVATE)
+            .edit().putInt("playback_order", order.ordinal).apply()
+    }
     var queue: List<Track> = emptyList()
     fun send(context: Context, action: String, track: Track? = null) {
         val intent = Intent(context, PlaybackService::class.java).setAction(action)
@@ -60,6 +79,7 @@ class PlaybackService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        PlaybackController.loadOrder(this)
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(
             NotificationChannel(CHANNEL, "Music playback", NotificationManager.IMPORTANCE_LOW)
         )
@@ -106,7 +126,11 @@ class PlaybackService : Service() {
             player = MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
                 setDataSource(this@PlaybackService, track.uri)
-                setOnCompletionListener { if (PlaybackController.repeat) { seekTo(0); start(); sync() } else step(1, completion = true) }
+                setOnCompletionListener {
+                    if (PlaybackController.order == PlaybackOrder.REPEAT_ONE) {
+                        seekTo(0); start(); sync()
+                    } else step(1, completion = true)
+                }
                 prepare()
                 start()
             }
@@ -134,9 +158,16 @@ class PlaybackService : Service() {
         val queue = activeQueue.ifEmpty { PlaybackController.queue.ifEmpty { loadSongs(this) } }
         val index = queue.indexOfFirst { it.id == current.id }
         if (queue.isEmpty()) return
-        if (completion && !PlaybackController.repeat && index == queue.lastIndex) { pause(); seek(0); return }
-        val nextIndex = if (PlaybackController.shuffle && queue.size > 1) {
-            (queue.indices.filter { it != index }).random()
+        val order = PlaybackController.order
+        // Normal mode finishes at the end; Repeat all wraps; Repeat one restarts in the
+        // completion callback; Shuffle chooses a different track where possible.
+        if (completion && order == PlaybackOrder.NORMAL && index == queue.lastIndex) {
+            pause()
+            seek(0)
+            return
+        }
+        val nextIndex = if (order == PlaybackOrder.SHUFFLE && queue.size > 1) {
+            queue.indices.filter { it != index }.random()
         } else ((index + direction + queue.size) % queue.size)
         playTrack(queue[nextIndex])
     }
@@ -192,7 +223,10 @@ class PlaybackService : Service() {
         player?.release(); player = null
         PlaybackController.audioSessionId = 0
         PlaybackController.playing = false
+        PlaybackController.position = 0L
         PlaybackController.current = null
+        PlaybackController.queue = emptyList()
+        activeQueue = emptyList()
         session.isActive = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
