@@ -9,7 +9,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.view.WindowManager
-import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.provider.Settings
 import android.provider.MediaStore
@@ -81,7 +80,7 @@ class MainActivity : ComponentActivity() {
         DisposableEffect(screen) {
             if (screen == "visualizer") {
                 if (Build.VERSION.SDK_INT >= 30) {
-                    window.insetsController?.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                    window.insetsController?.hide(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
                     window.insetsController?.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 } else {
                     @Suppress("DEPRECATION")
@@ -90,7 +89,7 @@ class MainActivity : ComponentActivity() {
             }
             onDispose {
                 if (screen == "visualizer") {
-                    if (Build.VERSION.SDK_INT >= 30) window.insetsController?.show(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                    if (Build.VERSION.SDK_INT >= 30) window.insetsController?.show(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
                     else {
                         @Suppress("DEPRECATION")
                         window.decorView.systemUiVisibility = 0
