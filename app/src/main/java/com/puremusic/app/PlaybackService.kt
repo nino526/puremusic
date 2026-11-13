@@ -15,11 +15,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-/** One playback mode button cycles through all supported playback orders. */
-enum class PlaybackOrder(val title: String) {
-    NORMAL("Normal"), SHUFFLE("Shuffle"), REPEAT_ALL("Repeat all"), REPEAT_ONE("Repeat one")
-}
-
 /** One playback state for the full-screen player, mini-player and Android media controls. */
 object PlaybackController {
     var current by mutableStateOf<Track?>(null)
@@ -46,7 +41,7 @@ object PlaybackController {
         context.getSharedPreferences("pure_playback", Context.MODE_PRIVATE)
             .edit().putInt("playback_order", order.ordinal).apply()
     }
-    var queue: List<Track> = emptyList()
+    var queue by mutableStateOf<List<Track>>(emptyList())
     fun send(context: Context, action: String, track: Track? = null) {
         val intent = Intent(context, PlaybackService::class.java).setAction(action)
         if (track != null) intent.putExtra("trackId", track.id)
@@ -107,6 +102,7 @@ class PlaybackService : Service() {
                     ?: loadSongs(this).firstOrNull { it.id == trackId }
                 if (track != null) {
                     PlaybackController.current = track
+                    session.isActive = true // Restore session after a previous STOP.
                     startForeground(NOTIFICATION_ID, notification())
                     playTrack(track)
                 } else stopSelf()
@@ -155,7 +151,8 @@ class PlaybackService : Service() {
     private fun pause() { player?.takeIf { it.isPlaying }?.pause(); sync() }
     private fun step(direction: Int, completion: Boolean = false) {
         val current = PlaybackController.current ?: return
-        val queue = activeQueue.ifEmpty { PlaybackController.queue.ifEmpty { loadSongs(this) } }
+        // Always consult the live queue after items have been added during playback.
+        val queue = PlaybackController.queue.ifEmpty { activeQueue.ifEmpty { loadSongs(this) } }
         val index = queue.indexOfFirst { it.id == current.id }
         if (queue.isEmpty()) return
         val order = PlaybackController.order

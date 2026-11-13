@@ -13,6 +13,7 @@ import android.view.WindowInsetsController
 import android.provider.Settings
 import android.provider.MediaStore
 import android.app.Activity
+import android.app.RecoverableSecurityException
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -106,23 +107,45 @@ class MainActivity : ComponentActivity() {
         var addToPlaylist by remember { mutableStateOf<Track?>(null) }
         var trackMenu by remember { mutableStateOf<Track?>(null) }
         var deleteCandidate by remember { mutableStateOf<Track?>(null) }
+        var pendingDelete by remember { mutableStateOf<Track?>(null) }
         var deleteError by remember { mutableStateOf<String?>(null) }
+        fun finishDeletion(track: Track) {
+            songs = loadSongs(this@MainActivity)
+            store.removeSongEverywhere(track.id)
+            refresh++
+            PlaybackController.queue = PlaybackController.queue.filterNot { it.id == track.id }
+            if (PlaybackController.current?.id == track.id) command(PlaybackService.STOP)
+        }
         val deleteLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                songs = loadSongs(this@MainActivity)
-                deleteCandidate = null
+            val track = pendingDelete
+            pendingDelete = null
+            if (result.resultCode == Activity.RESULT_OK && track != null) {
+                try {
+                    // Android 10 grants temporary ownership; retry deletion after consent.
+                    // On Android 11+ MediaStore performs the deletion during confirmation.
+                    if (Build.VERSION.SDK_INT == 29) contentResolver.delete(track.uri, null, null)
+                    finishDeletion(track)
+                } catch (e: Exception) {
+                    deleteError = "Could not remove the song: ${e.localizedMessage ?: "permission denied"}"
+                }
             }
         }
         fun deleteTrack(track: Track) {
             try {
                 if (Build.VERSION.SDK_INT >= 30) {
                     val request = MediaStore.createDeleteRequest(contentResolver, listOf(track.uri))
+                    pendingDelete = track
                     deleteLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(request.intentSender).build())
                 } else {
                     val deleted = contentResolver.delete(track.uri, null, null)
-                    if (deleted > 0) songs = loadSongs(this@MainActivity)
+                    if (deleted > 0) finishDeletion(track)
                     else deleteError = "Android did not allow deleting this audio file."
                 }
+            } catch (e: SecurityException) {
+                if (Build.VERSION.SDK_INT == 29 && e is RecoverableSecurityException) {
+                    pendingDelete = track
+                    deleteLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(e.userAction.actionIntent.intentSender).build())
+                } else deleteError = "Android did not allow deleting this audio file."
             } catch (e: Exception) { deleteError = "Could not request deletion: ${e.localizedMessage ?: "permission denied"}" }
         }
         var status by remember { mutableStateOf("Recognize a song using the Google app") }
@@ -334,8 +357,16 @@ class MainActivity : ComponentActivity() {
                 AlertDialog(onDismissRequest = { trackMenu = null },
                     title = { Text(track.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                     text = { Column {
-                        TextButton(onClick = { PlaybackController.queue = PlaybackController.queue + track; trackMenu = null }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.QueueMusic, null); Spacer(Modifier.width(10.dp)); Text("Play later", modifier = Modifier.weight(1f)) }
-                        TextButton(onClick = { PlaybackController.queue = PlaybackController.queue + track; trackMenu = null }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.PlaylistPlay, null); Spacer(Modifier.width(10.dp)); Text("Add to queue", modifier = Modifier.weight(1f)) }
+                        TextButton(onClick = {
+                            val queue = PlaybackController.queue.ifEmpty { listOfNotNull(PlaybackController.current) }
+                            PlaybackController.queue = QueueEditing.playAfter(queue, PlaybackController.current, track) { it.id }
+                            trackMenu = null
+                        }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.QueueMusic, null); Spacer(Modifier.width(10.dp)); Text("Play next", modifier = Modifier.weight(1f)) }
+                        TextButton(onClick = {
+                            val queue = PlaybackController.queue.ifEmpty { listOfNotNull(PlaybackController.current) }
+                            PlaybackController.queue = QueueEditing.append(queue, track) { it.id }
+                            trackMenu = null
+                        }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.PlaylistPlay, null); Spacer(Modifier.width(10.dp)); Text("Add to queue", modifier = Modifier.weight(1f)) }
                         TextButton(onClick = { trackMenu = null; addToPlaylist = track }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.PlaylistAdd, null); Spacer(Modifier.width(10.dp)); Text("Add to playlist", modifier = Modifier.weight(1f)) }
                         TextButton(onClick = {
                             trackMenu = null
