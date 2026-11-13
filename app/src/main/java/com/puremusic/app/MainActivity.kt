@@ -469,19 +469,46 @@ private fun FullPlayer(track: Track, playing: Boolean, position: Long, onBack: (
             Text(formatPlaybackTime(duration), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
         Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceEvenly) {
-            PlaybackModeButton(showLabel = true)
-            IconButton(onClick = { onControl(PlaybackService.PREVIOUS) }) { Icon(Icons.Default.SkipPrevious, "Previous", modifier = Modifier.size(38.dp)) }
-            FilledIconButton(onClick = { onControl(PlaybackService.TOGGLE) }, modifier = Modifier.size(70.dp)) {
-                Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or pause", modifier = Modifier.size(34.dp))
+        // Exactly five equal-width cells ensure the primary play button sits on
+        // the horizontal centerline on every phone width and in either theme.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { PlaybackModeButton() }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                IconButton(onClick = { onControl(PlaybackService.PREVIOUS) }) {
+                    Icon(Icons.Default.SkipPrevious, "Previous", modifier = Modifier.size(31.dp))
+                }
             }
-            IconButton(onClick = { onControl(PlaybackService.NEXT) }) { Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(38.dp)) }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                FilledIconButton(onClick = { onControl(PlaybackService.TOGGLE) }, modifier = Modifier.size(70.dp)) {
+                    Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        "Play or pause", modifier = Modifier.size(34.dp))
+                }
+            }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                IconButton(onClick = { onControl(PlaybackService.NEXT) }) {
+                    Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(31.dp))
+                }
+            }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                IconButton(onClick = onVisualizer) {
+                    Icon(Icons.Default.GraphicEq, "Open full-screen visualizer",
+                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(27.dp))
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            TextButton(onClick = onQueue) { Icon(Icons.Default.QueueMusic, "Queue"); Spacer(Modifier.width(8.dp)); Text("Up next") }
-            TextButton(onClick = onVisualizer) { Icon(Icons.Default.GraphicEq, "Visualizer"); Spacer(Modifier.width(8.dp)); Text("Visualizer") }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onQueue, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.QueueMusic, "Queue")
+                Spacer(Modifier.width(8.dp))
+                Text("Up next")
+            }
+            TextButton(onClick = onVisualizer, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.GraphicEq, "Visualizer")
+                Spacer(Modifier.width(8.dp))
+                Text("Visualizer")
+            }
         }
         Spacer(Modifier.height(8.dp))
     }
